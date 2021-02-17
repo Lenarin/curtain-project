@@ -33,6 +33,7 @@ public:
         }
 
         root["inScan"] = settings.inScan;
+        root["command"] = "set";
     }
 
     static StateUpdateResult update(JsonObject& root, CurtainsState& cstate) {

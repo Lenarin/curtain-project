@@ -39,14 +39,19 @@ function CurtainsStateWebSocketControllerForm(props: CurtainsStateWebSocketContr
     const [settingMaxPosition, setSettingMaxPosition] = useState<number>(0);
     const [settingMinPosition, setSettingMinPosition] = useState<number>(0);
 
+    const [curtains, setCurtains] = useState<CurtainState[]>(data.curtains);
+
     useEffect(() => {
         if (data.inScan === false) {
             closeSnackbar();
         }
+        if (data.command === "set") {
+            setCurtains(data.curtains);
+        }
     }, [data])
 
     const handleNewPosition = (position: number, guid: string) => {
-        const newData = data.curtains.find(el => el.guid === guid);
+        const newData = curtains.find(el => el.guid === guid);
         if (newData) {
             newData.position = position;
 
@@ -86,13 +91,13 @@ function CurtainsStateWebSocketControllerForm(props: CurtainsStateWebSocketContr
     }
 
     const handleOpenAllButtonClick = () => {
-        const newCurtains = data.curtains.map(el => {el.position = el.maxPosition; return el;});
+        const newCurtains = curtains.map(el => {el.position = el.maxPosition; return el;});
         setData({curtains: newCurtains}, saveData);
 
     }
 
     const handleCloseAllButtonClick = () => {
-        const newCurtains = data.curtains.map(el => {el.position = el.minPosition; return el;});
+        const newCurtains = curtains.map(el => {el.position = el.minPosition; return el;});
         setData({curtains: newCurtains}, saveData);
     }
 
@@ -111,8 +116,9 @@ function CurtainsStateWebSocketControllerForm(props: CurtainsStateWebSocketContr
                         Открыть все
                     </Button>
                 </Grid>
-                {data.curtains.map(curtain => (
+                {curtains.map(curtain => (
                     <CurtainCard
+                        key = {curtain.guid}
                         curtain = {curtain}
                         onNewPosition = {handleNewPosition}
                         onSettingsButtonClick = {handleDialogOpen}

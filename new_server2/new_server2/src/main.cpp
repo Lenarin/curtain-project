@@ -19,6 +19,7 @@ void setup() {
 }
 
 void loop() {
+  while (!(Serial.available() || Serial2.available())) {}
   if (Serial.available() || Serial2.available()) {
     const char *input;
 
@@ -71,4 +72,5 @@ void loop() {
       serializeJson(resp, Serial2);
     }
   }
+  delay(10);
 }

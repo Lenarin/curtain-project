@@ -15,17 +15,33 @@
 #define NAME_CHARACTERISTIC_UUID          "e911584a-a8ea-4f0e-b088-3e6467a84493"
 #define UUID_CHARACTERISTIC_UUID          "107e91b9-e7cb-424f-97cf-0d3034a9cafc"
 
-//#define DEVICE_UUID                       "e80fa056-465b-4a0e-b714-61547bbaf40a"
-#define DEVICE_UUID                       "085fc865-93df-4c1c-a52c-481e0681ead2"
+#define DEVICE_UUID                       "e80fa056-465b-4a0e-b714-61547bbaf40a"
+//#define DEVICE_UUID                       "085fc865-93df-4c1c-a52c-481e0681ead2"
+
+#define CURTAIN_CONTROLLER_LEFT_PIN_1       22
+#define CURTAIN_CONTROLLER_LEFT_PIN_2       23
+#define CURTAIN_CONTROLLER_RIGHT_PIN_1      25
+#define CURTAIN_CONTROLLER_RIGHT_PIN_2      26
+
+#define CURTAIN_CONTROLLER_HALL_PIN_1       34
+#define CURTAIN_CONTROLLER_HALL_PIN_2       35
+
+#define CURTAIN_CONTROLLER_BATTERY_PIN      9
+
 
 EEPROMClass memPosition("eeprom0", 0x500);
 EEPROMClass memMaxPosition("eeprom1", 0x500);
 EEPROMClass memMinPosition("eeprom2", 0x500);
 EEPROMClass memName("eeprom3", 0x500);
 
+volatile long currentPosition = 0;
+volatile long targetPosition = 0;
+
 class PositionCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *characteristic) {
       std::string value = characteristic->getValue();
+
+      targetPosition = String(value.c_str()).toInt();
 
       memPosition.writeString(0, value.c_str());
       memPosition.commit();
@@ -75,6 +91,69 @@ class MyServerCallbacks: public BLEServerCallbacks {
     }
 };
 
+
+
+void IRAM_ATTR EncA() {
+    if (digitalRead(CURTAIN_CONTROLLER_HALL_PIN_2)) {
+        currentPosition++;
+    } else {
+        currentPosition--;
+    }
+}
+
+enum TurnDirection {
+    Left,
+    Right,
+    None
+};
+
+TurnDirection currentDirection = None;
+
+void Move(TurnDirection direction) {
+    if (direction == TurnDirection::Left) {
+        if (currentDirection == TurnDirection::Left) {
+          return;
+        }
+
+        if (currentDirection == TurnDirection::Right) {
+            digitalWrite(CURTAIN_CONTROLLER_RIGHT_PIN_1, LOW);
+            digitalWrite(CURTAIN_CONTROLLER_RIGHT_PIN_2, LOW);
+            delay(50);
+        }
+
+        digitalWrite(CURTAIN_CONTROLLER_LEFT_PIN_1, HIGH);
+        delay(10);
+        digitalWrite(CURTAIN_CONTROLLER_LEFT_PIN_2, HIGH);
+        currentDirection = TurnDirection::Left;
+    }
+    else if (direction == TurnDirection::Right) {
+        if (currentDirection == TurnDirection::Right) {
+          return;
+        }
+
+        if (currentDirection == TurnDirection::Left) {
+            digitalWrite(CURTAIN_CONTROLLER_LEFT_PIN_1, LOW);
+            digitalWrite(CURTAIN_CONTROLLER_LEFT_PIN_2, LOW);
+            delay(50);
+        }
+
+        digitalWrite(CURTAIN_CONTROLLER_RIGHT_PIN_1, HIGH);
+        delay(10);
+        digitalWrite(CURTAIN_CONTROLLER_RIGHT_PIN_2, HIGH);
+        currentDirection = TurnDirection::Right;
+    }
+    else if (direction == TurnDirection::None) {
+        if (currentDirection == TurnDirection::None) {
+          return;
+        }
+
+        digitalWrite(CURTAIN_CONTROLLER_LEFT_PIN_1, LOW);
+        digitalWrite(CURTAIN_CONTROLLER_LEFT_PIN_2, LOW);
+        digitalWrite(CURTAIN_CONTROLLER_RIGHT_PIN_1, LOW);
+        digitalWrite(CURTAIN_CONTROLLER_RIGHT_PIN_2, LOW);
+        currentDirection = TurnDirection::None;
+    }
+}
 
 
 void setup() {
@@ -169,12 +248,14 @@ void setup() {
   minPos = memMinPosition.readString(0);
   position = memPosition.readString(0);
 
+  currentPosition = position.toInt();
+  targetPosition = position.toInt();
+
   positionCharacteristic->setValue(position.c_str());
   maxPositionCharacteristic->setValue(maxPos.c_str());
   minPositionCharacteristic->setValue(minPos.c_str());
   uuidCharacteristic->setValue(DEVICE_UUID);
   nameCharacteristic->setValue(name.c_str());
-
 
   // Start the service
   pService->start();
@@ -185,19 +266,27 @@ void setup() {
   pAdvertising->setScanResponse(true);
   pAdvertising->setMinPreferred(0x0);  // set value to 0x00 to not advertise this parameter
   BLEDevice::startAdvertising();
+
+  pinMode(CURTAIN_CONTROLLER_RIGHT_PIN_1, OUTPUT);
+  pinMode(CURTAIN_CONTROLLER_RIGHT_PIN_2, OUTPUT);
+  pinMode(CURTAIN_CONTROLLER_LEFT_PIN_1, OUTPUT);
+  pinMode(CURTAIN_CONTROLLER_LEFT_PIN_2, OUTPUT);
+
+  pinMode(CURTAIN_CONTROLLER_HALL_PIN_1, INPUT);
+  pinMode(CURTAIN_CONTROLLER_HALL_PIN_2, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(CURTAIN_CONTROLLER_HALL_PIN_1), EncA, RISING);
 }
 
 void loop() {
     // notify changed value
     if (deviceConnected) {
-        Serial.println("Connected!");
         delay(10); // bluetooth stack will go into congestion, if too many packets are sent, in 6 hours test i was able to go as low as 3ms
     }
     // disconnecting
     if (!deviceConnected && oldDeviceConnected) {
         delay(500); // give the bluetooth stack the chance to get things ready
         pServer->startAdvertising(); // restart advertising
-        Serial.println("start advertising");
         oldDeviceConnected = deviceConnected;
     }
     // connecting
@@ -205,4 +294,14 @@ void loop() {
         // do stuff here on connecting
         oldDeviceConnected = deviceConnected;
     }
-}
+
+    if (abs(currentPosition - targetPosition) > 5) {
+        if (currentPosition < targetPosition) {
+            Move(TurnDirection::Left);
+        } else {
+            Move(TurnDirection::Right);
+        }
+    } else {
+        Move(TurnDirection::None);
+    }
+  }
